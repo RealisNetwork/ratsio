@@ -1,25 +1,18 @@
-use log::info;
 use futures::StreamExt;
+use log::info;
 use ratsio::{RatsioError, StanClient, StanOptions};
 use std::env;
 
 pub fn logger_setup() {
+    use env_logger::Builder;
     use log::LevelFilter;
     use std::io::Write;
-    use env_logger::Builder;
 
     let _ = Builder::new()
-        .format(|buf, record| {
-            writeln!(buf,
-                     "[{}] - {}",
-                     record.level(),
-                     record.args()
-            )
-        })
+        .format(|buf, record| writeln!(buf, "[{}] - {}", record.level(), record.args()))
         .filter(None, LevelFilter::Trace)
         .try_init();
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), RatsioError> {
@@ -39,18 +32,22 @@ async fn main() -> Result<(), RatsioError> {
     let subject = args[1].clone();
 
     //Subscribe to STAN subject 'foo'
-    let (sid, mut subscription) = stan_client.subscribe(subject.clone(), None,
-                                                        Some(format!("durable-{}", subject))).await?;
+    let (sid, mut subscription) = stan_client
+        .subscribe(subject.clone(), None, Some(format!("durable-{}", subject)))
+        .await?;
 
     ctrlc::set_handler(move || {
         let mut runtime = tokio::runtime::Runtime::new().unwrap();
         let _ = runtime.block_on(stan_client.un_subscribe(&sid));
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     while let Some(message) = subscription.next().await {
-
-        info!("{:?}\n\t{:?}", &message,
-              String::from_utf8_lossy(message.payload.as_ref()));
+        info!(
+            "{:?}\n\t{:?}",
+            &message,
+            String::from_utf8_lossy(message.payload.as_ref())
+        );
     }
     Ok(())
 }

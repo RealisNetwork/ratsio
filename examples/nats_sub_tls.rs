@@ -1,25 +1,18 @@
-use ratsio::{NatsClient, RatsioError, NatsClientOptions};
-use log::info;
 use futures::StreamExt;
+use log::info;
+use ratsio::{NatsClient, NatsClientOptions, RatsioError};
 use std::env;
 
 pub fn logger_setup() {
+    use env_logger::Builder;
     use log::LevelFilter;
     use std::io::Write;
-    use env_logger::Builder;
 
     let _ = Builder::new()
-        .format(|buf, record| {
-            writeln!(buf,
-                     "[{}] - {}",
-                     record.level(),
-                     record.args()
-            )
-        })
+        .format(|buf, record| writeln!(buf, "[{}] - {}", record.level(), record.args()))
         .filter(None, LevelFilter::Trace)
         .try_init();
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), RatsioError> {
@@ -46,13 +39,17 @@ async fn main() -> Result<(), RatsioError> {
     ctrlc::set_handler(move || {
         let mut runtime = tokio::runtime::Runtime::new().unwrap();
         let _ = runtime.block_on(nats_client.un_subscribe(&sid));
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     //Listen for messages on the 'foo' description
     //The loop terminates when the upon un_subscribe
     while let Some(message) = subscription.next().await {
-        info!("{:?}\n\t{:?}", &message,
-              String::from_utf8_lossy(message.payload.as_ref()));
+        info!(
+            "{:?}\n\t{:?}",
+            &message,
+            String::from_utf8_lossy(message.payload.as_ref())
+        );
     }
     Ok(())
 }

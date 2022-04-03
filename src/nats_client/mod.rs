@@ -1,18 +1,18 @@
 pub mod client;
 mod client_inner;
- mod converters;
+mod converters;
 
 use crate::net::nats_tcp_stream::NatsTcpStream;
-use crate::ops::{ServerInfo, Op, Message, Subscribe};
+use crate::ops::{Message, Op, ServerInfo, Subscribe};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use std::fmt::Debug;
-use futures::stream::{ SplitSink};
 use futures::lock::Mutex;
+use futures::stream::SplitSink;
 use nom::lib::std::collections::HashMap;
+use std::fmt::Debug;
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone)]
@@ -56,8 +56,6 @@ pub struct NatsClientOptions {
     pub user_jwt: Option<UserJWT>,
     /// Nkey authentication
     pub nkey: Option<String>,
-
-
 }
 
 impl Default for NatsClientOptions {
@@ -89,7 +87,6 @@ impl NatsClientOptions {
     }
 }
 
-
 #[derive(PartialEq, Clone, Debug)]
 pub enum NatsClientState {
     Connecting,
@@ -98,16 +95,16 @@ pub enum NatsClientState {
     Disconnected,
     Shutdown,
 }
-pub(crate) type ReconnectHandler = Box<dyn Fn(&NatsClient) -> () + Send + Sync>;
+pub(crate) type DisconnectHandler = Box<dyn Fn(&NatsClient) -> () + Send + Sync>;
 pub use crate::ops::Message as NatsMessage;
 
 pub struct NatsClient {
     inner: Arc<NatsClientInner>,
-    reconnect_handlers: RwLock<Vec<ReconnectHandler>>,
+    disconnect_handlers: RwLock<Vec<DisconnectHandler>>,
 }
 
 #[derive(Debug)]
-pub (crate) enum ClosableMessage {
+pub(crate) enum ClosableMessage {
     Message(Message),
     Close,
 }
@@ -119,7 +116,7 @@ pub struct NatsClientInner {
     /// Server info
     server_info: RwLock<Option<ServerInfo>>,
     subscriptions: Arc<Mutex<HashMap<String, (UnboundedSender<ClosableMessage>, Subscribe)>>>,
-    on_reconnect: tokio::sync::Mutex<Option<Pin<Box<dyn Future<Output=()> + Send + Sync>>>>,
+    on_reconnect: tokio::sync::Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>>,
     state: RwLock<NatsClientState>,
     last_ping: RwLock<u128>,
     client_ref: RwLock<Option<Arc<NatsClient>>>,
@@ -134,20 +131,17 @@ impl ::std::fmt::Debug for NatsClient {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct UriVec(Vec<String>);
 
-
 impl From<String> for NatsClientOptions {
     fn from(uri: String) -> Self {
-        NatsClientOptions{
+        NatsClientOptions {
             cluster_uris: UriVec(vec![uri]),
             ..Default::default()
         }
     }
 }
-
 
 /// An alias representing the requirements for the nonce signing callback function
 pub type SignerCallback =
@@ -160,7 +154,6 @@ pub type SignerCallback =
 #[derive(Clone)]
 pub struct UserJWT {
     jwt: String,
-    signer: SignerCallback,
 }
 
 impl Debug for UserJWT {
@@ -178,7 +171,7 @@ impl PartialEq for UserJWT {
 impl UserJWT {
     /// Creates a new UserJWT option from an encoded JWT and a callback to be invoked to sign
     /// the server-provided nonce
-    pub fn new(jwt: String, signer: SignerCallback) -> UserJWT {
-        UserJWT { jwt, signer }
+    pub fn new(jwt: String, _signer: SignerCallback) -> UserJWT {
+        UserJWT { jwt }
     }
 }

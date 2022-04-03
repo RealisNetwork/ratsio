@@ -1,55 +1,53 @@
+use crate::error::RatsioError;
+use crate::nats_client::{
+    ClosableMessage, NatsClientInner, NatsClientOptions, NatsClientState, NatsSid,
+};
 use crate::net::nats_tcp_stream::NatsTcpStream;
-use crate::ops::{Op, Connect, Subscribe, Message, UnSubscribe, Publish};
-use futures::{StreamExt, SinkExt};
-use crate::nats_client::{NatsClientOptions, NatsClientInner, NatsSid, ClosableMessage, NatsClientState};
+use crate::ops::{Connect, Message, Op, Publish, Subscribe, UnSubscribe};
+use futures::{SinkExt, StreamExt};
+use futures_timer::Delay;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use crate::error::RatsioError;
-use futures_timer::Delay;
 use std::time::Duration;
 
-use tokio::{
-    net::TcpStream,
-    sync::mpsc::UnboundedReceiver,
-};
-use futures::{
-    stream::SplitStream,
-};
-use std::pin::Pin;
-use futures::stream::Stream;
-use std::task::{Context, Poll};
-use std::thread::sleep;
 use crate::ops::Op::UNSUB;
+use futures::stream::SplitStream;
+use futures::stream::Stream;
 use pin_project::pin_project;
-
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
 
 impl NatsClientInner {
     //Establish tcp connection with one of the Nats servers
     // Process - go through uris in opts.cluster_uris, trying one at a time.
     //     If none of attempted connections succeed, wait and try again.
-    pub(in crate::nats_client) async fn try_connect(opts: NatsClientOptions, cluster_uris: &Vec<String>, keep_retrying: bool) -> Result<TcpStream, RatsioError> {
-        let valid_addresses = cluster_uris.iter().flat_map(|raw_uri| {
-            let uri = if raw_uri.starts_with("nats://") {
-                (&raw_uri[7..]).to_string()
-            } else {
-                raw_uri.clone()
-            };
-            match uri.parse::<SocketAddr>() {
-                Ok(addr) => Some((uri, addr)).into_iter().collect::<Vec<_>>(),
-                Err(_err) => {
-                    match uri.to_socket_addrs() {
-                        Ok(ips_iter) => ips_iter.map(|x| {
-                            (uri.clone(), x)
-                        }).collect::<Vec<_>>(),
+    pub(in crate::nats_client) async fn try_connect(
+        opts: NatsClientOptions,
+        cluster_uris: &[String],
+        keep_retrying: bool,
+    ) -> Result<TcpStream, RatsioError> {
+        let valid_addresses = cluster_uris
+            .iter()
+            .flat_map(|raw_uri| {
+                let uri = if raw_uri.starts_with("nats://") {
+                    (&raw_uri[7..]).to_string()
+                } else {
+                    raw_uri.clone()
+                };
+                match uri.parse::<SocketAddr>() {
+                    Ok(addr) => Some((uri, addr)).into_iter().collect::<Vec<_>>(),
+                    Err(_err) => match uri.to_socket_addrs() {
+                        Ok(ips_iter) => ips_iter.map(|x| (uri.clone(), x)).collect::<Vec<_>>(),
                         Err(err) => {
                             error!("Unable resolve url => {} to ip address => {}", &uri, err);
                             Default::default()
                         }
-                    }
+                    },
                 }
-            }
-        }).collect::<Vec<_>>();
-        if valid_addresses.len() == 0 {
+            })
+            .collect::<Vec<_>>();
+        if valid_addresses.is_empty() {
             return Err(RatsioError::GenericError("No valid NATS uris".into()));
         }
         loop {
@@ -65,15 +63,18 @@ impl NatsClientInner {
             error!("Unable to connect to any of the Nats servers, will retry again.");
             if keep_retrying {
                 let _ = Delay::new(Duration::from_millis(opts.reconnect_timeout)).await;
-            }else{
+            } else {
                 return Err(RatsioError::NoRouteToHostError);
             }
         }
     }
 
-
     // Issue a connect command to NATS
-    pub(in crate::nats_client) async fn start(self_arc: Arc<Self>, version: u128, mut stream: SplitStream<NatsTcpStream>) -> Result<(), RatsioError> {
+    pub(in crate::nats_client) async fn start(
+        self_arc: Arc<Self>,
+        version: u128,
+        mut stream: SplitStream<NatsTcpStream>,
+    ) -> Result<(), RatsioError> {
         let opts = self_arc.opts.clone();
         //Register for NATS incoming messages
         //let mut executor = futures::executor::LocalPool::new();
@@ -129,21 +130,15 @@ impl NatsClientInner {
                 *info = Some(server_info)
             }
             Op::PING => {
-                match self.send_command(Op::PONG).await {
-                    Err(err) => {
-                        error!(" Error sending PONG to Nats {:?}", err);
-                    }
-                    _ => {}
+                if let Err(err) = self.send_command(Op::PONG).await {
+                    error!(" Error sending PONG to Nats {:?}", err);
                 }
             }
             Op::MSG(message) => {
                 let subscriptions = self.subscriptions.lock().await;
                 if let Some((sender, _)) = subscriptions.get(&message.sid) {
-                    match sender.send(ClosableMessage::Message(message)) {
-                        Err(err) => {
-                            error!("Unable to send message to subscription - {:?}", err);
-                        }
-                        _ => {}
+                    if let Err(err) = sender.send(ClosableMessage::Message(message)) {
+                        error!("Unable to send message to subscription - {:?}", err);
                     }
                 }
             }
@@ -159,7 +154,7 @@ impl NatsClientInner {
     pub(in crate::nats_client) async fn subscribe(
         &self,
         cmd: Subscribe,
-    ) -> Result<(NatsSid, impl Stream<Item=Message> + Send + Sync), RatsioError> {
+    ) -> Result<(NatsSid, impl Stream<Item = Message> + Send + Sync), RatsioError> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         // FIXME redundant if sid always NOT EMPTY
         let sid = if cmd.sid.is_empty() {
@@ -178,24 +173,18 @@ impl NatsClientInner {
         sid: NatsSid,
     ) -> Result<(), RatsioError> {
         let mut subscriptions = self.subscriptions.lock().await;
-        match subscriptions.remove(&sid.0) {
-            Some((sender, _)) => {
-                let _ = sender.send(ClosableMessage::Close);
-                let cmd = UNSUB(UnSubscribe {
-                    sid: sid.0.clone(),
-                    ..Default::default()
-                });
-                let _ = self.send_command(cmd).await?;
-            }
-            _ => {}
+        if let Some((sender, _)) = subscriptions.remove(&sid.0) {
+            let _ = sender.send(ClosableMessage::Close);
+            let cmd = UNSUB(UnSubscribe {
+                sid: sid.0.clone(),
+                ..Default::default()
+            });
+            let _ = self.send_command(cmd).await?;
         }
         Ok(())
     }
 
-    pub(in crate::nats_client) async fn publish(
-        &self,
-        cmd: Publish,
-    ) -> Result<(), RatsioError> {
+    pub(in crate::nats_client) async fn publish(&self, cmd: Publish) -> Result<(), RatsioError> {
         self.send_command(Op::PUB(cmd)).await
     }
 
@@ -217,7 +206,7 @@ impl NatsClientInner {
         let _ = self.un_subscribe(sid).await;
         match response {
             Some(message) => Ok(message),
-            _ => { Err(RatsioError::RequestStreamClosed) }
+            _ => Err(RatsioError::RequestStreamClosed),
         }
     }
 
@@ -277,7 +266,8 @@ impl NatsClientInner {
         } else {
             return Err(RatsioError::CannotReconnectToServer);
         };
-        let tcp_stream = Self::try_connect(self.opts.clone(), &self.opts.cluster_uris.0, true).await?;
+        let tcp_stream =
+            Self::try_connect(self.opts.clone(), &self.opts.cluster_uris.0, true).await?;
         let (sink, stream) = NatsTcpStream::new(tcp_stream).await.split();
         *self.conn_sink.lock().await = sink;
         *self.reconnect_version.write().await += 1;
@@ -288,15 +278,22 @@ impl NatsClientInner {
             for (_sid, (_sender, subscribe_command)) in subscriptions.iter() {
                 match self.send_command(Op::SUB(subscribe_command.clone())).await {
                     Ok(_) => {
-                        info!("re subscribed to => {:?}", subscribe_command.subject.clone());
+                        info!(
+                            "re subscribed to => {:?}",
+                            subscribe_command.subject.clone()
+                        );
                     }
                     Err(err) => {
-                        info!(" Failed to resubscribe to => {:?}, reason => {:?}", subscribe_command.clone(), err);
+                        info!(
+                            "Failed to resubscribe to => {:?}, reason => {:?}",
+                            subscribe_command.clone(),
+                            err
+                        );
                     }
                 }
             }
         }
-        client_ref.on_reconnect().await;
+        client_ref.on_disconnect().await;
         Ok(())
     }
 
@@ -317,36 +314,42 @@ impl NatsClientInner {
                 }
             }
 
-            let mut reconnect_required = false;
-            match self.send_command(Op::PING).await {
-                Ok(_) => {}
-                Err(err) => {
-                    error!("Error pinging NATS server {:?}", err);
-                    reconnect_required = true;
-                }
+            if let Err(error) = self.send_command(Op::PING).await {
+                error!("Error pinging NATS server {:?}", error);
+                self.on_disconnect().await;
+                break;
             }
-            if !reconnect_required {
-                let _ = Delay::new(Duration::from_millis((ping_interval / 2) as u64)).await;
-                let now = Self::time_in_millis();
-                let last_ping = self.last_ping.read().await;
-                if now - *last_ping > ping_interval {
-                    error!("Missed ping interval")
-                }
-                if (now - *last_ping) > (ping_max_out * ping_interval) {
-                    reconnect_required = true;
-                }
+            let _ = Delay::new(Duration::from_millis((ping_interval / 2) as u64)).await;
+            let now = Self::time_in_millis();
+            let last_ping = self.last_ping.read().await;
+            if now - *last_ping > ping_interval {
+                error!("Missed ping interval")
             }
-
-            if reconnect_required {
-                error!("Missed too many pings, reconnect is required.");
-                {
-                    let mut state_guard = self.state.write().await;
-                    *state_guard = NatsClientState::Disconnected;
-                }
-                let _ = self.reconnect().await;
+            if (now - *last_ping) > (ping_max_out * ping_interval) {
+                self.on_disconnect().await;
+                break;
             }
         }
         Ok(())
+    }
+
+    async fn on_disconnect(&self) {
+        error!("Missed too many pings, rerun is required.");
+        // TODO: write inline
+        {
+            let mut state_guard = self.state.write().await;
+            *state_guard = NatsClientState::Disconnected;
+        }
+
+        let client_ref_guard = self.client_ref.read().await;
+        match client_ref_guard.as_ref() {
+            Some(client_ref) => {
+                client_ref.on_disconnect().await;
+            }
+            None => {
+                error!("Inernal ratsio error: cannot get `NatsClient` for handle disconnect! This is the bug report: https://github.com/RealisNetwork/ratsio")
+            }
+        }
     }
 }
 
@@ -358,81 +361,10 @@ impl Stream for NatsClosableReceiver {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.project().0.poll_recv(cx) {
-            Poll::Ready(Some(ClosableMessage::Message(msg))) => {
-                Poll::Ready(Some(msg))
-            }
-            Poll::Ready(Some(ClosableMessage::Close)) => {
-                Poll::Ready(None)
-            }
-            Poll::Pending => {
-                Poll::Pending
-            }
-            Poll::Ready(None) => {
-                Poll::Ready(None)
-            }
+            Poll::Ready(Some(ClosableMessage::Message(msg))) => Poll::Ready(Some(msg)),
+            Poll::Ready(Some(ClosableMessage::Close)) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(None) => Poll::Ready(None),
         }
     }
 }
-
-
-
-
-/*
-pub struct NatsSubscriptionStream {
-    waker: Arc<std::sync::Mutex<Option<Waker>>>,
-    queue: Arc<std::sync::Mutex<VecDeque<Message>>>,
-}
-
-impl NatsSubscriptionStream {
-    fn start(self, receiver: std::sync::mpsc::Receiver<Message>) -> Self {
-        let queue = self.queue.clone();
-        let waker = self.waker.clone();
-        tokio::spawn(async move {
-            for msg in receiver.iter() {
-                if let Ok(mut queue_lock) = queue.lock() {
-                    queue_lock.push_back(msg);
-                }
-                if let Ok(mut waker_lock) = waker.lock() {
-                    if let Some(w) = waker_lock.as_ref() {
-                        let w2 = w.clone();
-                        //info!(" ------ waking up stream loop => {:?}", w2);
-                        w2.wake();
-                    }
-                }
-            }
-        });
-        self
-    }
-}
-
-impl Stream for NatsSubscriptionStream {
-    type Item = Message;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Ok(mut queue) = self.queue.lock() {
-            match queue.pop_front() {
-                Some(msg) => Poll::Ready(Some(msg)),
-                _ => {
-                    if let Ok(mut waker_lock) = self.waker.lock() {
-                        let w = cx.waker().clone();
-                        //info!(" ------ register waker {:?}", w);
-                        *waker_lock = Some(w);
-                    }
-                    Poll::Pending
-                }
-            }
-        } else {
-            Poll::Ready(None)
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let hint = if let Ok( queue) = self.queue.lock() {
-            (queue.len(), Some(queue.len() + 1))
-        }else{
-            (0, None)
-        };
-        hint
-    }
-}
-*/

@@ -1,14 +1,11 @@
-use crate::nats_client::{NatsClient, NatsClientOptions, NatsSid, ClosableMessage};
+use crate::nats_client::{ClosableMessage, NatsClient, NatsClientOptions, NatsSid};
 use crate::nuid::NUID;
 
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
+use std::fmt::{Debug, Error, Formatter};
 use tokio::sync::mpsc::UnboundedSender;
-use std::fmt::{Debug, Formatter, Error};
 
 pub mod client;
 
@@ -31,7 +28,7 @@ const DEFAULT_ACK_WAIT: i32 = 30 * 60000;
 // DefaultMaxInflight indicates how many messages with outstanding ACKs the server can send
 const DEFAULT_MAX_INFLIGHT: i32 = 1024;
 
-#[derive(Debug, Clone, PartialEq, Builder)]
+#[derive(Debug, Clone, Builder)]
 #[builder(setter(into), default)]
 pub struct StanOptions {
     pub nats_options: NatsClientOptions,
@@ -49,10 +46,12 @@ pub struct StanOptions {
 #[derive(Debug, Clone)]
 pub struct StanSid(pub(crate) NatsSid);
 
-
 impl StanOptions {
-    pub fn new<S>(cluster_id: S, client_id: S) -> StanOptions where S: ToString{
-        StanOptions{
+    pub fn new<S>(cluster_id: S, client_id: S) -> StanOptions
+    where
+        S: ToString,
+    {
+        StanOptions {
             client_id: client_id.to_string(),
             cluster_id: cluster_id.to_string(),
             ..Default::default()
@@ -60,9 +59,11 @@ impl StanOptions {
     }
 
     pub fn with_options<T, S>(nats_options: T, cluster_id: S, client_id: S) -> StanOptions
-        where T: Into<NatsClientOptions> ,
-            S: ToString{
-        StanOptions{
+    where
+        T: Into<NatsClientOptions>,
+        S: ToString,
+    {
+        StanOptions {
             client_id: client_id.to_string(),
             cluster_id: cluster_id.to_string(),
             nats_options: nats_options.into(),
@@ -92,7 +93,6 @@ impl Default for StanOptions {
 }
 
 pub(crate) struct AckHandler(Box<dyn Fn() -> () + Send + Sync>);
-
 
 impl Drop for AckHandler {
     fn drop(&mut self) {
@@ -186,7 +186,6 @@ impl Clone for StanMessage {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum StartPosition {
     //Send only new messages
@@ -239,16 +238,9 @@ impl Default for StanSubscribe {
 
 #[derive(Clone, Debug)]
 struct Subscription {
-    client_id: String,
     subject: String,
-    queue_group: Option<String>,
     durable_name: Option<String>,
-    max_in_flight: i32,
-    ack_wait_in_secs: i32,
     inbox: String,
-    ack_inbox: String,
-    unsub_requests: String,
-    close_requests: String,
     sender: UnboundedSender<ClosableMessage>,
 }
 
@@ -270,8 +262,5 @@ pub struct ClientInfo {
     pub_prefix: String,
     sub_requests: String,
     unsub_requests: String,
-    sub_close_requests: String,
     close_requests: String,
-    ping_requests: String,
-    public_key: String,
 }

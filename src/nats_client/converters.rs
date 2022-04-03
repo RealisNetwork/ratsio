@@ -2,7 +2,7 @@ use crate::nats_client::{NatsClientOptions, UriVec};
 
 impl From<&str> for NatsClientOptions {
     fn from(uri: &str) -> Self {
-        NatsClientOptions{
+        NatsClientOptions {
             cluster_uris: UriVec(vec![uri.to_string()]),
             ..Default::default()
         }
@@ -11,7 +11,7 @@ impl From<&str> for NatsClientOptions {
 
 impl From<Vec<&str>> for NatsClientOptions {
     fn from(uris: Vec<&str>) -> Self {
-        NatsClientOptions{
+        NatsClientOptions {
             cluster_uris: UriVec(uris.iter().map(|uri| uri.to_string()).collect()),
             ..Default::default()
         }
@@ -20,13 +20,12 @@ impl From<Vec<&str>> for NatsClientOptions {
 
 impl From<Vec<String>> for NatsClientOptions {
     fn from(uris: Vec<String>) -> Self {
-        NatsClientOptions{
+        NatsClientOptions {
             cluster_uris: UriVec(uris.iter().map(|uri| uri.to_string()).collect()),
             ..Default::default()
         }
     }
 }
-
 
 impl From<Vec<&str>> for UriVec {
     fn from(xs: Vec<&str>) -> Self {

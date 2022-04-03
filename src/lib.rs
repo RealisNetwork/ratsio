@@ -11,15 +11,14 @@ pub mod protocol {
     include!(concat!(env!("OUT_DIR"), "/pb.rs"));
 }
 
-pub mod net;
-pub mod parser;
-pub mod ops;
 pub mod error;
-pub mod nuid;
 pub mod nats_client;
+pub mod net;
+pub mod nuid;
+pub mod ops;
+pub mod parser;
 pub mod stan_client;
 
-pub use nats_client::{NatsMessage, NatsSid, NatsClient, NatsClientOptions};
-pub use stan_client::{StanMessage, StanSid, StanClient, StanOptions, StartPosition};
 pub use error::RatsioError;
-
+pub use nats_client::{NatsClient, NatsClientOptions, NatsMessage, NatsSid};
+pub use stan_client::{StanClient, StanMessage, StanOptions, StanSid, StartPosition};

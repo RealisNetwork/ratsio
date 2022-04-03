@@ -1,42 +1,38 @@
-use ratsio::nats_client::NatsClient;
-use log::info;
 use futures::StreamExt;
+use log::info;
 use ratsio::error::RatsioError;
+use ratsio::nats_client::NatsClient;
 
-use ratsio::protocol;
 use ratsio::nuid;
+use ratsio::protocol;
 
 pub fn logger_setup() {
+    use env_logger::Builder;
     use log::LevelFilter;
     use std::io::Write;
-    use env_logger::Builder;
 
     let _ = Builder::new()
-        .format(|buf, record| {
-            writeln!(buf,
-                     "[{}] - {}",
-                     record.level(),
-                     record.args()
-            )
-        })
+        .format(|buf, record| writeln!(buf, "[{}] - {}", record.level(), record.args()))
         .filter(None, LevelFilter::Trace)
         .try_init();
 }
-
 
 #[tokio::test]
 async fn test1() -> Result<(), RatsioError> {
     logger_setup();
 
-    info!( " ---- test 1");
+    info!(" ---- test 1");
     let nats_client = NatsClient::new("nats://localhost:4222").await?;
     let (sid, mut subscription) = nats_client.subscribe("foo3").await?;
-    info!( " ---- test 2 {:?}", sid);
+    info!(" ---- test 2 {:?}", sid);
     tokio::spawn(async move {
-        info!( " ---- test 3 {:?}", sid);
+        info!(" ---- test 3 {:?}", sid);
         while let Some(message) = subscription.next().await {
-            info!(" << 1 >> got message --- {:?}\n\t{:?}", &message,
-                  String::from_utf8_lossy(message.payload.as_ref()));
+            info!(
+                " << 1 >> got message --- {:?}\n\t{:?}",
+                &message,
+                String::from_utf8_lossy(message.payload.as_ref())
+            );
         }
     });
 

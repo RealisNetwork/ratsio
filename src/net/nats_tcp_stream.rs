@@ -1,9 +1,9 @@
+use std::fmt::Debug;
+use std::fmt::{Error, Formatter};
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use std::fmt::{Error, Formatter};
-use std::fmt::Debug;
 
 use bytes::{Buf, BytesMut};
 use futures::{Sink, Stream};
@@ -12,11 +12,11 @@ use futures_core::ready;
 use native_tls::{self, TlsConnector};
 use nom::Err as NomErr;
 use pin_project::pin_project;
+use tokio::io::ReadBuf;
 use tokio::{
     io::{self, AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use tokio::io::ReadBuf;
 #[cfg(feature = "tls")]
 use tokio_native_tls::{TlsConnector as TokioTlsConnector, TlsStream};
 
@@ -64,7 +64,6 @@ impl NatsTcpStreamInner {
     }
 }
 
-
 impl AsyncRead for NatsTcpStreamInner {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -96,7 +95,6 @@ impl AsyncWrite for NatsTcpStreamInner {
         }
     }
 
-
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         match self.project() {
             NatsTcpStreamInnerProj::PlainStream(stream) => stream.poll_shutdown(cx),
@@ -106,20 +104,19 @@ impl AsyncWrite for NatsTcpStreamInner {
     }
 }
 
-
 impl Stream for NatsTcpStream {
     type Item = Op;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
-        match NatsTcpStream::decode(&mut this.read_buffer) {
+        match NatsTcpStream::decode(this.read_buffer) {
             Some(item) => {
                 return Poll::Ready(Some(item));
             }
             None => {}
         }
 
-        let mut read_buffer = this.read_buffer;
+        let read_buffer = this.read_buffer;
         // Spurious EOF protection
         read_buffer.reserve(1);
 
@@ -134,7 +131,7 @@ impl Stream for NatsTcpStream {
                     buff.clear();
                     //println!(" ----- buffer [{}]\n\t'{}'", size, std::str::from_utf8(read_buffer.as_ref()).unwrap());
                     if size > 0 {
-                        match NatsTcpStream::decode(&mut read_buffer) {
+                        match NatsTcpStream::decode(read_buffer) {
                             Some(item) => {
                                 return Poll::Ready(Some(item));
                             }
@@ -170,7 +167,7 @@ impl Sink<Op> for NatsTcpStream {
         if !*this.flushed {
             match this.stream_inner.as_mut().poll_flush(cx)? {
                 Poll::Ready(()) => Poll::Ready(Ok(())),
-                Poll::Pending => return Poll::Pending,
+                Poll::Pending => Poll::Pending,
             }
         } else {
             Poll::Ready(Ok(()))
@@ -190,7 +187,10 @@ impl Sink<Op> for NatsTcpStream {
         if *this.flushed {
             return Poll::Ready(Ok(()));
         }
-        let len = ready!(this.stream_inner.as_mut().poll_write(cx, this.write_buffer.as_ref()))?;
+        let len = ready!(this
+            .stream_inner
+            .as_mut()
+            .poll_write(cx, this.write_buffer.as_ref()))?;
         let wrote_all = len == this.write_buffer.len();
         *this.flushed = true;
         this.write_buffer.clear();
@@ -201,7 +201,8 @@ impl Sink<Op> for NatsTcpStream {
             Err(io::Error::new(
                 io::ErrorKind::Other,
                 "failed to write entire datagram to socket",
-            ).into())
+            )
+            .into())
         };
 
         Poll::Ready(res)
@@ -233,16 +234,12 @@ impl NatsTcpStream {
     }
 
     fn decode(src: &mut BytesMut) -> Option<Op> {
-        if src.len() == 0 {
+        if src.is_empty() {
             return None;
         }
         let (op_item, offset) = match operation(src.as_ref()) {
-            Err(NomErr::Incomplete(_)) => {
-                (None, None)
-            }
-            Ok((remaining, item)) => {
-                (Some(item), Some(src.len() - remaining.len()))
-            }
+            Err(NomErr::Incomplete(_)) => (None, None),
+            Ok((remaining, item)) => (Some(item), Some(src.len() - remaining.len())),
             Err(NomErr::Error(err)) => {
                 let txt = String::from(&(*String::from_utf8_lossy(src.as_ref())));
                 error!(target: "ratsio", " Error parsing => {:?}\n{}", err, txt);
@@ -273,9 +270,7 @@ impl NatsTcpStream {
                 src.advance(offset);
                 None
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 }

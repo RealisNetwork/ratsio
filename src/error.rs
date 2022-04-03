@@ -1,11 +1,10 @@
-use std::io;
 use futures::task::SpawnError;
+use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum RatsioError {
     //Http-like errors
-
     #[error("CommandBuildError: {0}")]
     CommandBuildError(String),
     /// Generic IO error from stdlib
@@ -18,7 +17,7 @@ pub enum RatsioError {
     /// Protocol error
     /// Occurs if we try to parse a string that is supposed to be valid UTF8 and...is actually not
     #[error("UTF8Error: {0}")]
-    UTF8Error(#[from]  ::std::string::FromUtf8Error),
+    UTF8Error(#[from] ::std::string::FromUtf8Error),
     /// Error on TLS handling
     // Occurs when the host is not provided, removing the ability for TLS to function correctly for server identify verification
     #[error("NoRouteToHostError: Host is missing, can't verify server identity")]
@@ -44,7 +43,9 @@ pub enum RatsioError {
     #[error("InternalServerError: something unexpected went wrong")]
     InternalServerError,
     /// The user supplied a too big payload for the server
-    #[error("MaxPayloadOverflow: the given payload exceeds the server setting (max_payload_size = {0})")]
+    #[error(
+        "MaxPayloadOverflow: the given payload exceeds the server setting (max_payload_size = {0})"
+    )]
     MaxPayloadOverflow(usize),
     /// Generic string error
     #[error("GenericError: {0}")]
@@ -60,7 +61,7 @@ pub enum RatsioError {
     AckInboxMissing,
 
     #[error("SpawnError for {0:?}")]
-    SpawnError(#[from] SpawnError)
+    SpawnError(#[from] SpawnError),
 }
 
 // impl From<RatsioError> for () {

@@ -1,9 +1,9 @@
 use crate::error::RatsioError;
 use crate::nuid::NUID;
+use ::std::fmt;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
 use std::convert::From;
-use ::std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub enum JsonValue {
@@ -140,21 +140,25 @@ impl ToString for ServerInfo {
         buff.push_str(&format!(r#","tls_required": {}"#, self.tls_required));
         buff.push_str(&format!(r#","tls_verify": {}"#, self.tls_verify));
 
-        if self.connect_urls.len() > 0 {
+        if !self.connect_urls.is_empty() {
             buff.push_str(r#","connect_urls": ["#);
-            let xs = self.connect_urls.clone().into_iter().fold(String::default(), |acc, url| {
-                if acc.len() > 0 {
-                    format!(r#"{}, "{}""#, acc, url)
-                } else {
-                    format!(r#""{}""#, url)
-                }
-            });
+            let xs = self
+                .connect_urls
+                .clone()
+                .into_iter()
+                .fold(String::default(), |acc, url| {
+                    if !acc.is_empty() {
+                        format!(r#"{}, "{}""#, acc, url)
+                    } else {
+                        format!(r#""{}""#, url)
+                    }
+                });
             buff.push_str(&xs);
             buff.push_str(r#","]"#);
         }
         buff.push_str(&format!(r#","nonce": {}"#, self.nonce));
 
-        buff.push_str("}");
+        buff.push('}');
         buff
     }
 }
@@ -165,7 +169,7 @@ impl From<JsonValue> for ServerInfo {
             JsonValue::Object(obj) => {
                 let connect_urls: Vec<String> = match obj.get("connect_urls") {
                     Some(JsonValue::Array(arr)) => arr
-                        .into_iter()
+                        .iter()
                         .filter_map(|v| match v {
                             JsonValue::String(s) => Some(s.to_owned()),
                             _ => None,
@@ -264,7 +268,7 @@ impl ToString for Connect {
         if let Some(ref nkey) = self.nkey {
             buff.push_str(&format!(r#","nkey": "{}""#, nkey));
         }
-        buff.push_str("}");
+        buff.push('}');
         buff
     }
 }
@@ -460,21 +464,19 @@ impl Op {
                 let prefix = &b"INFO\t"[..];
                 let serialized_info = info.to_string();
                 let mut dst = BytesMut::with_capacity(serialized_info.len() + prefix.len() + 2);
-                dst.put(&prefix[..]);
+                dst.put(prefix);
                 dst.put(serialized_info.as_bytes());
                 dst.put(&b"\r\n"[..]);
                 Ok(dst.freeze())
             }
             Op::CONNECT(connect) => {
-
                 let prefix = &b"CONNECT\t"[..];
                 let serialized_connect = connect.to_string();
                 let mut dst = BytesMut::with_capacity(serialized_connect.len() + prefix.len() + 2);
-                dst.put(&prefix[..]);
+                dst.put(prefix);
                 dst.put(serialized_connect.as_bytes());
                 dst.put(&b"\r\n"[..]);
                 Ok(dst.freeze())
-
             }
             Op::OK => {
                 let cmd = &b"+OK\r\n"[..];
@@ -620,18 +622,24 @@ fn ser_connect() {
         jwt: None,
         nkey: None,
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                //                                           {"verbose": false,"pedantic": false,"tls_required": false,"name": "","lang": "go","version": "1.2.2","protocol": 1,"echo": "true"}
-                let c = format!("CONNECT\t{}\r\n", r#"{"verbose": false,"pedantic": false,"tls_required": false,"name": "","lang": "rust","version": "0.3.0","protocol": 1,"echo": true}"#);
-                assert_eq!(&b[..], c.as_bytes());
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            println!(
+                " -----------=> \n{}",
+                String::from_utf8(Vec::from(&b[..])).unwrap()
+            );
+            //                                           {"verbose": false,"pedantic": false,"tls_required": false,"name": "","lang": "go","version": "1.2.2","protocol": 1,"echo": "true"}
+            let c = format!(
+                "CONNECT\t{}\r\n",
+                r#"{"verbose": false,"pedantic": false,"tls_required": false,"name": "","lang": "rust","version": "0.3.0","protocol": 1,"echo": true}"#
+            );
+            assert_eq!(&b[..], c.as_bytes());
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -642,17 +650,17 @@ fn ser_message() {
         reply_to: Some(String::from("INBOX.34")),
         payload: Vec::from(b"Hello World" as &[u8]),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                let c = format!("MSG\tFOO.BAR\t9\tINBOX.34\t11\r\n{}\r\n", r#"Hello World"#);
-                assert_eq!(&b[..], c.as_bytes());
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            let c = format!("MSG\tFOO.BAR\t9\tINBOX.34\t11\r\n{}\r\n", r#"Hello World"#);
+            assert_eq!(&b[..], c.as_bytes());
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -663,17 +671,17 @@ fn ser_message_no_reply() {
         reply_to: None,
         payload: Vec::from(b"Hello New World" as &[u8]),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                let c = format!("MSG\tFOO.BAR\t9\t15\r\n{}\r\n", r#"Hello New World"#);
-                assert_eq!(&b[..], c.as_bytes());
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            let c = format!("MSG\tFOO.BAR\t9\t15\r\n{}\r\n", r#"Hello New World"#);
+            assert_eq!(&b[..], c.as_bytes());
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -683,19 +691,19 @@ fn ser_publish() {
         reply_to: Some(String::from("INBOX.22")),
         payload: Vec::from(b"Knock Knock" as &[u8]),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(
-                    &b[..],
-                    &b"PUB\tFRONT.DOOR\tINBOX.22\t11\r\nKnock Knock\r\n"[..]
-                );
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(
+                &b[..],
+                &b"PUB\tFRONT.DOOR\tINBOX.22\t11\r\nKnock Knock\r\n"[..]
+            );
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -705,16 +713,16 @@ fn ser_publish_no_reply() {
         reply_to: None,
         payload: Vec::from(b"Knock Knock Again" as &[u8]),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(&b[..], &b"PUB\tFRONT.DOOR\t17\r\nKnock Knock Again\r\n"[..]);
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(&b[..], &b"PUB\tFRONT.DOOR\t17\r\nKnock Knock Again\r\n"[..]);
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -724,16 +732,16 @@ fn ser_sub() {
         sid: String::from("44"),
         queue_group: Some(String::from("G1")),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(&b[..], &b"SUB\tBAR\tG1\t44\r\n"[..]);
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(&b[..], &b"SUB\tBAR\tG1\t44\r\n"[..]);
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -743,16 +751,16 @@ fn ser_sub_no_group() {
         sid: String::from("44"),
         queue_group: None,
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(&b[..], &b"SUB\tBAR\t44\r\n"[..]);
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(&b[..], &b"SUB\tBAR\t44\r\n"[..]);
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -761,16 +769,16 @@ fn ser_unsub() {
         sid: String::from("44234535"),
         max_msgs: Some(500),
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(&b[..], &b"UNSUB\t44234535\t500\r\n"[..]);
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(&b[..], &b"UNSUB\t44234535\t500\r\n"[..]);
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
 
 #[test]
@@ -779,14 +787,14 @@ fn ser_unsub_no_max() {
         sid: String::from("44234535"),
         max_msgs: None,
     })
-        .into_bytes()
-        {
-            Ok(b) => {
-                //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
-                assert_eq!(&b[..], &b"UNSUB\t44234535\r\n"[..]);
-            }
-            Err(_) => {
-                assert!(false);
-            }
+    .into_bytes()
+    {
+        Ok(b) => {
+            //println!(" -----------=> \n{}", String::from_utf8(Vec::from(&b[..])).unwrap());
+            assert_eq!(&b[..], &b"UNSUB\t44234535\r\n"[..]);
         }
+        Err(_) => {
+            assert!(false);
+        }
+    }
 }
