@@ -20,7 +20,7 @@ impl NatsClient {
     {
         let opts = options.into();
         let tcp_stream =
-            NatsClientInner::try_connect(opts.clone(), &opts.cluster_uris.0, false).await?;
+            NatsClientInner::try_connect(opts.clone(), &opts.cluster_uris.0, 10).await?;
         let (sink, stream) = NatsTcpStream::new(tcp_stream).await.split();
 
         let version = 1;
