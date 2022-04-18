@@ -25,8 +25,9 @@ impl NatsClientInner {
     pub(in crate::nats_client) async fn try_connect(
         opts: NatsClientOptions,
         cluster_uris: &[String],
-        keep_retrying: bool,
+        keep_retrying: u16,
     ) -> Result<TcpStream, RatsioError> {
+        let mut retrying_count = keep_retrying;
         let valid_addresses = cluster_uris
             .iter()
             .flat_map(|raw_uri| {
@@ -61,8 +62,9 @@ impl NatsClientInner {
                 }
             }
             error!("Unable to connect to any of the Nats servers, will retry again.");
-            if keep_retrying {
+            if retrying_count > 0 {
                 let _ = Delay::new(Duration::from_millis(opts.reconnect_timeout)).await;
+                retrying_count -= 1;
             } else {
                 return Err(RatsioError::NoRouteToHostError);
             }
@@ -267,7 +269,7 @@ impl NatsClientInner {
             return Err(RatsioError::CannotReconnectToServer);
         };
         let tcp_stream =
-            Self::try_connect(self.opts.clone(), &self.opts.cluster_uris.0, true).await?;
+            Self::try_connect(self.opts.clone(), &self.opts.cluster_uris.0, 10).await?;
         let (sink, stream) = NatsTcpStream::new(tcp_stream).await.split();
         *self.conn_sink.lock().await = sink;
         *self.reconnect_version.write().await += 1;
