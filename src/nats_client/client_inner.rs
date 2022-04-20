@@ -316,10 +316,13 @@ impl NatsClientInner {
                 }
             }
 
-            if let Err(error) = self.send_command(Op::PING).await {
-                error!("Error pinging NATS server {:?}", error);
-                self.on_disconnect().await;
-                break;
+            match self.send_command(Op::PING).await {
+                Ok(()) => {()},
+                Err(error) => {
+                    error!("Error pinging NATS server {:?}", error);
+                    self.on_disconnect().await;
+                    return Err(error);
+                }
             }
             let _ = Delay::new(Duration::from_millis((ping_interval / 2) as u64)).await;
             let now = Self::time_in_millis();

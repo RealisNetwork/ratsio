@@ -60,7 +60,7 @@ impl NatsClient {
             *disconnect = Some(Box::pin(disconnect_f));
         }
 
-        //heartbeat monitor
+        // heartbeat monitor
         let heartbeat_client = arc_client.clone();
         tokio::spawn(async move {
             let _ = heartbeat_client.inner.monitor_heartbeat().await;
