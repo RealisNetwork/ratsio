@@ -63,7 +63,10 @@ impl NatsClient {
         // heartbeat monitor
         let heartbeat_client = arc_client.clone();
         tokio::spawn(async move {
-            let _ = heartbeat_client.inner.monitor_heartbeat().await;
+            let _ = match heartbeat_client.inner.monitor_heartbeat().await {
+                Ok(()) => (),
+                Err(error) => panic!("Hearbeat client end with: {:?}", error),
+            };
         });
         Ok(arc_client)
     }
